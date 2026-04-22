@@ -1,4 +1,4 @@
-const CACHE_NAME = 'health-logger-v2';
+const CACHE_NAME = 'health-logger-v3';
 const ASSETS = [
   './health-logger.html',
   './health-onedrive.html',
@@ -8,9 +8,7 @@ const ASSETS = [
 ];
 
 const CDN_ASSETS = [
-  'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
-  'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js',
-  'https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js'
+  'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js'
 ];
 
 self.addEventListener('install', event => {
