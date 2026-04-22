@@ -12,6 +12,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icon-192.png">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html { height: -webkit-fill-available; }
@@ -138,6 +139,34 @@
             border: 1px solid rgba(255, 68, 68, 0.3) !important;
         }
         #clearBtn:hover { background: rgba(255, 68, 68, 0.25) !important; }
+        /* Charts modal */
+        .charts-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 9999; overflow-y: auto;
+            padding: 20px 16px;
+            padding-top: max(20px, env(safe-area-inset-top));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+        .charts-overlay.visible { display: block; }
+        .charts-header {
+            display: flex; justify-content: space-between; align-items: center;
+            max-width: 780px; margin: 0 auto 20px;
+        }
+        .charts-header h2 { color: #00e5ff; font-size: 22px; }
+        .charts-close {
+            background: rgba(255,68,68,0.15); border: 1px solid rgba(255,68,68,0.3);
+            color: #ff4444; width: auto; padding: 8px 16px;
+            font-size: 14px; border-radius: 6px; cursor: pointer;
+        }
+        .chart-card {
+            background: rgba(20, 20, 50, 0.9);
+            border: 1px solid rgba(0, 229, 255, 0.15);
+            border-radius: 12px; padding: 16px;
+            max-width: 780px; margin: 0 auto 20px;
+        }
+        .chart-card h3 { color: #8899aa; font-size: 13px; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.5px; }
+        .chart-card canvas { width: 100% !important; max-height: 260px; }
     </style>
 </head>
 <body>
@@ -183,8 +212,29 @@
         <div class="stat-bar" id="stats"></div>
 
         <div class="actions">
+            <button id="chartsBtn">&#128200; Charts</button>
             <button id="exportBtn">&#128196; Export CSV</button>
             <button id="clearBtn">&#10005; Clear All</button>
+        </div>
+
+        <!-- Charts overlay -->
+        <div class="charts-overlay" id="chartsOverlay">
+            <div class="charts-header">
+                <h2>&#128200; Health Charts</h2>
+                <button class="charts-close" id="chartsClose">&#10005; Close</button>
+            </div>
+            <div class="chart-card">
+                <h3>Blood Pressure (mmHg)</h3>
+                <canvas id="bpChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Heart Rate (bpm)</h3>
+                <canvas id="hrChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Weight (kg)</h3>
+                <canvas id="wtChart"></canvas>
+            </div>
         </div>
 
         <div class="table-wrapper">
@@ -228,6 +278,8 @@
             showStatus(entries.length ? entries.length + ' entries loaded' : '');
 
             $('addBtn').addEventListener('click', addEntry);
+            $('chartsBtn').addEventListener('click', showCharts);
+            $('chartsClose').addEventListener('click', hideCharts);
             $('exportBtn').addEventListener('click', exportCSV);
             $('clearBtn').addEventListener('click', clearAll);
             $('logBody').addEventListener('click', handleDeleteClick);
@@ -369,6 +421,78 @@
                 '<div class="stat"><div class="label">Avg Heart Rate</div><div class="value">' + avg(entries.map(e => e.heartRate)) + ' bpm</div></div>' +
                 '<div class="stat"><div class="label">Avg Weight</div><div class="value">' + avg(entries.map(e => e.weight)) + ' kg</div></div>' +
                 '<div class="stat"><div class="label">Total Entries</div><div class="value">' + entries.length + '</div></div>';
+        }
+
+        // ========================================================
+        // Charts
+        // ========================================================
+        let bpChart, hrChart, wtChart;
+
+        function showCharts() {
+            if (!entries.length) { showStatus('No data to chart', 'error'); return; }
+            $('chartsOverlay').classList.add('visible');
+            renderCharts();
+        }
+
+        function hideCharts() {
+            $('chartsOverlay').classList.remove('visible');
+        }
+
+        function renderCharts() {
+            const sorted = [...entries].sort((a, b) =>
+                new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time)
+            );
+            const labels = sorted.map(e => e.date);
+
+            const chartOpts = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#aab' } } },
+                scales: {
+                    x: { ticks: { color: '#667', maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { ticks: { color: '#667' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                }
+            };
+
+            // Blood Pressure
+            if (bpChart) bpChart.destroy();
+            bpChart = new Chart($('bpChart'), {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Systolic', data: sorted.map(e => e.systolic), borderColor: '#ff6b6b', backgroundColor: 'rgba(255,107,107,0.1)', tension: 0.3, pointRadius: 3 },
+                        { label: 'Diastolic', data: sorted.map(e => e.diastolic), borderColor: '#48dbfb', backgroundColor: 'rgba(72,219,251,0.1)', tension: 0.3, pointRadius: 3 }
+                    ]
+                },
+                options: chartOpts
+            });
+
+            // Heart Rate
+            if (hrChart) hrChart.destroy();
+            hrChart = new Chart($('hrChart'), {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Heart Rate', data: sorted.map(e => e.heartRate), borderColor: '#ff9f43', backgroundColor: 'rgba(255,159,67,0.1)', tension: 0.3, pointRadius: 3 }
+                    ]
+                },
+                options: chartOpts
+            });
+
+            // Weight
+            if (wtChart) wtChart.destroy();
+            wtChart = new Chart($('wtChart'), {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Weight', data: sorted.map(e => e.weight), borderColor: '#2ed573', backgroundColor: 'rgba(46,213,115,0.1)', tension: 0.3, pointRadius: 3 }
+                    ]
+                },
+                options: chartOpts
+            });
         }
 
         // ========================================================
