@@ -1,0 +1,615 @@
+start<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Health Data Logger</title>
+    <!-- PWA & iOS meta tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Health Log">
+    <meta name="theme-color" content="#0f0f23">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html { height: -webkit-fill-available; }
+        body {
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
+            background: #0f0f23;
+            font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 30px 16px;
+            padding-top: max(30px, env(safe-area-inset-top));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+            padding-left: max(16px, env(safe-area-inset-left));
+            padding-right: max(16px, env(safe-area-inset-right));
+            -webkit-font-smoothing: antialiased;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: none;
+        }
+        h1 {
+            color: #00e5ff;
+            margin-bottom: 24px;
+            font-size: 28px;
+            letter-spacing: 1px;
+        }
+        .form-card {
+            background: rgba(20, 20, 50, 0.9);
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            border-radius: 12px;
+            padding: 24px;
+            width: 100%;
+            max-width: 520px;
+            backdrop-filter: blur(8px);
+            margin-bottom: 30px;
+        }
+        .form-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-width: 120px;
+        }
+        label {
+            font-size: 12px;
+            color: #8899aa;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(0, 229, 255, 0.15);
+            border-radius: 6px;
+            padding: 10px 12px;
+            color: #e0e0e0;
+            font-size: 16px; /* prevents iOS zoom on focus */
+            outline: none;
+            transition: border-color 0.2s;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        input:focus {
+            border-color: #00e5ff;
+        }
+        input[type="number"] { -moz-appearance: textfield; }
+        input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+        .bp-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .bp-group input { width: 70px; text-align: center; }
+        .bp-slash { color: #00e5ff; font-size: 20px; font-weight: bold; }
+        button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+        button:active { transform: scale(0.98); }
+        button { touch-action: manipulation; }
+        #addBtn {
+            background: #00e5ff;
+            color: #0f0f23;
+            margin-top: 6px;
+        }
+        #addBtn:hover { background: #33ecff; }
+        .actions {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            max-width: 520px;
+            margin-bottom: 16px;
+        }
+        .actions button {
+            flex: 1;
+            padding: 10px;
+            font-size: 13px;
+            border-radius: 6px;
+        }
+        .actions button {
+            background: rgba(0, 229, 255, 0.15);
+            color: #00e5ff;
+            border: 1px solid rgba(0, 229, 255, 0.3);
+        }
+        .actions button:hover { background: rgba(0, 229, 255, 0.25); }
+        #clearBtn {
+            background: rgba(255, 68, 68, 0.15) !important;
+            color: #ff4444 !important;
+            border: 1px solid rgba(255, 68, 68, 0.3) !important;
+        }
+        #clearBtn:hover { background: rgba(255, 68, 68, 0.25) !important; }
+        .file-status {
+            width: 100%; max-width: 520px;
+            text-align: center; font-size: 12px;
+            color: #4a7; margin-bottom: 10px;
+            min-height: 18px;
+        }
+        .file-status.error { color: #f66; }
+        .table-wrapper {
+            width: 100%;
+            max-width: 780px;
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        thead th {
+            background: rgba(0, 229, 255, 0.1);
+            color: #00e5ff;
+            padding: 10px 14px;
+            text-align: left;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.8px;
+            border-bottom: 1px solid rgba(0, 229, 255, 0.2);
+            white-space: nowrap;
+        }
+        tbody td {
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            white-space: nowrap;
+        }
+        tbody tr:hover { background: rgba(0, 229, 255, 0.04); }
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #ff4444;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            width: auto;
+        }
+        .delete-btn:hover { background: rgba(255, 68, 68, 0.15); }
+        .empty-msg {
+            text-align: center;
+            color: #556;
+            padding: 40px;
+            font-size: 15px;
+        }
+        .stat-bar {
+            display: flex;
+            gap: 16px;
+            width: 100%;
+            max-width: 780px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .stat {
+            background: rgba(20, 20, 50, 0.8);
+            border: 1px solid rgba(0, 229, 255, 0.12);
+            border-radius: 8px;
+            padding: 12px 18px;
+            flex: 1;
+            min-width: 140px;
+            text-align: center;
+        }
+        .stat .label { font-size: 11px; color: #667; text-transform: uppercase; }
+        .stat .value { font-size: 20px; color: #00e5ff; font-weight: 700; margin-top: 4px; }
+        .charts-section {
+            width: 100%; max-width: 780px;
+            margin-bottom: 30px;
+        }
+        .charts-section h2 {
+            color: #00e5ff; font-size: 18px;
+            margin-bottom: 16px; text-align: center;
+        }
+        .chart-card {
+            background: rgba(20, 20, 50, 0.9);
+            border: 1px solid rgba(0, 229, 255, 0.15);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 18px;
+        }
+        .chart-card h3 {
+            color: #8899aa; font-size: 12px;
+            text-transform: uppercase; letter-spacing: 0.8px;
+            margin-bottom: 10px;
+        }
+        .chart-card canvas { width: 100% !important; }
+    </style>
+</head>
+<body>
+    <h1>&#9829; Health Logger</h1>
+
+    <div class="form-card">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Date</label>
+                <input type="date" id="date">
+            </div>
+            <div class="form-group">
+                <label>Time</label>
+                <input type="time" id="time">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Blood Pressure (mmHg)</label>
+                <div class="bp-group">
+                    <input type="number" id="systolic" placeholder="120" min="50" max="300">
+                    <span class="bp-slash">/</span>
+                    <input type="number" id="diastolic" placeholder="80" min="20" max="200">
+                </div>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Heart Rate (bpm)</label>
+                <input type="number" id="heartRate" placeholder="72" min="20" max="300">
+            </div>
+            <div class="form-group">
+                <label>Weight (kg)</label>
+                <input type="number" id="weight" placeholder="70.0" min="1" max="500" step="0.1">
+            </div>
+        </div>
+        <button id="addBtn">+ Log Entry</button>
+    </div>
+
+    <div class="file-status" id="fileStatus"></div>
+    <div class="stat-bar" id="stats"></div>
+
+    <div class="actions">
+        <button id="saveExcelBtn">&#128190; Save Excel</button>
+        <button id="loadExcelBtn">&#128194; Load Excel</button>
+        <button id="clearBtn">&#10005; Clear All</button>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
+
+    <div class="charts-section" id="chartsSection" style="display:none">
+        <h2>Trends</h2>
+        <div class="chart-card">
+            <h3>Blood Pressure (mmHg)</h3>
+            <canvas id="bpChart" height="200"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Heart Rate (bpm)</h3>
+            <canvas id="hrChart" height="200"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Weight (kg)</h3>
+            <canvas id="wtChart" height="200"></canvas>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Blood Pressure</th>
+                    <th>Heart Rate</th>
+                    <th>Weight</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="logBody"></tbody>
+        </table>
+        <div class="empty-msg" id="emptyMsg">No entries yet. Log your first reading above.</div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'healthLogEntries';
+        let fileHandle = null;
+
+        function loadEntries() {
+            try {
+                return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+            } catch { return []; }
+        }
+
+        function saveEntries(entries) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+            autoSaveToExcel(entries);
+        }
+
+        function entriesToWorkbook(entries) {
+            const sorted = [...entries].sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
+            const rows = sorted.map(e => ({
+                'Date': e.date,
+                'Time': e.time,
+                'Systolic (mmHg)': e.systolic,
+                'Diastolic (mmHg)': e.diastolic,
+                'Heart Rate (bpm)': e.heartRate,
+                'Weight (kg)': e.weight
+            }));
+            const ws = XLSX.utils.json_to_sheet(rows);
+            ws['!cols'] = [{wch:12},{wch:8},{wch:16},{wch:16},{wch:16},{wch:12}];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Health Log');
+            return wb;
+        }
+
+        async function autoSaveToExcel(entries) {
+            if (!fileHandle) return;
+            try {
+                const wb = entriesToWorkbook(entries);
+                const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                const writable = await fileHandle.createWritable();
+                await writable.write(new Uint8Array(wbout));
+                await writable.close();
+                showStatus('Auto-saved to ' + fileHandle.name);
+            } catch (err) {
+                showStatus('Auto-save failed: ' + err.message, true);
+            }
+        }
+
+        function showStatus(msg, isError) {
+            const el = document.getElementById('fileStatus');
+            el.textContent = msg;
+            el.className = 'file-status' + (isError ? ' error' : '');
+        }
+
+        function setDefaults() {
+            const now = new Date();
+            document.getElementById('date').value = now.toISOString().slice(0, 10);
+            document.getElementById('time').value = now.toTimeString().slice(0, 5);
+        }
+
+        function renderTable() {
+            const entries = loadEntries();
+            const tbody = document.getElementById('logBody');
+            const emptyMsg = document.getElementById('emptyMsg');
+
+            tbody.innerHTML = '';
+            emptyMsg.style.display = entries.length ? 'none' : 'block';
+
+            entries.sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time));
+
+            entries.forEach((entry, i) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${formatDate(entry.date)}</td>
+                    <td>${entry.time}</td>
+                    <td>${entry.systolic}/${entry.diastolic}</td>
+                    <td>${entry.heartRate} bpm</td>
+                    <td>${entry.weight} kg</td>
+                    <td><button class="delete-btn" data-id="${entry.id}" title="Delete">&#10005;</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            renderStats(entries);
+            renderCharts(entries);
+        }
+
+        let bpChart, hrChart, wtChart;
+
+        function renderCharts(entries) {
+            const section = document.getElementById('chartsSection');
+            if (entries.length < 2) { section.style.display = 'none'; return; }
+            section.style.display = 'block';
+
+            const sorted = [...entries].sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
+            const labels = sorted.map(e => {
+                const d = new Date(e.date + 'T00:00:00');
+                return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            });
+
+            const chartOpts = (yLabel) => ({
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { labels: { color: '#aab' } } },
+                scales: {
+                    x: { ticks: { color: '#667' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+                    y: { ticks: { color: '#667' }, grid: { color: 'rgba(255,255,255,0.06)' }, title: { display: true, text: yLabel, color: '#889' } }
+                }
+            });
+
+            // Blood Pressure
+            if (bpChart) bpChart.destroy();
+            bpChart = new Chart(document.getElementById('bpChart'), {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Systolic', data: sorted.map(e => e.systolic), borderColor: '#ff5555', backgroundColor: 'rgba(255,85,85,0.1)', tension: 0.3, fill: false, pointRadius: 4 },
+                        { label: 'Diastolic', data: sorted.map(e => e.diastolic), borderColor: '#5599ff', backgroundColor: 'rgba(85,153,255,0.1)', tension: 0.3, fill: false, pointRadius: 4 }
+                    ]
+                },
+                options: chartOpts('mmHg')
+            });
+
+            // Heart Rate
+            if (hrChart) hrChart.destroy();
+            hrChart = new Chart(document.getElementById('hrChart'), {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{ label: 'Heart Rate', data: sorted.map(e => e.heartRate), borderColor: '#ff9f43', backgroundColor: 'rgba(255,159,67,0.1)', tension: 0.3, fill: true, pointRadius: 4 }]
+                },
+                options: chartOpts('bpm')
+            });
+
+            // Weight
+            if (wtChart) wtChart.destroy();
+            wtChart = new Chart(document.getElementById('wtChart'), {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{ label: 'Weight', data: sorted.map(e => e.weight), borderColor: '#2ed573', backgroundColor: 'rgba(46,213,115,0.1)', tension: 0.3, fill: true, pointRadius: 4 }]
+                },
+                options: chartOpts('kg')
+            });
+        }
+
+        function formatDate(dateStr) {
+            const d = new Date(dateStr + 'T00:00:00');
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function renderStats(entries) {
+            const statsEl = document.getElementById('stats');
+            if (!entries.length) { statsEl.innerHTML = ''; return; }
+
+            const avg = (arr) => (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1);
+            const latest = entries.sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time))[0];
+
+            statsEl.innerHTML = `
+                <div class="stat">
+                    <div class="label">Latest BP</div>
+                    <div class="value">${latest.systolic}/${latest.diastolic}</div>
+                </div>
+                <div class="stat">
+                    <div class="label">Avg Heart Rate</div>
+                    <div class="value">${avg(entries.map(e => e.heartRate))} bpm</div>
+                </div>
+                <div class="stat">
+                    <div class="label">Avg Weight</div>
+                    <div class="value">${avg(entries.map(e => e.weight))} kg</div>
+                </div>
+                <div class="stat">
+                    <div class="label">Total Entries</div>
+                    <div class="value">${entries.length}</div>
+                </div>
+            `;
+        }
+
+        document.getElementById('addBtn').addEventListener('click', () => {
+            const date = document.getElementById('date').value;
+            const time = document.getElementById('time').value;
+            const systolic = parseInt(document.getElementById('systolic').value);
+            const diastolic = parseInt(document.getElementById('diastolic').value);
+            const heartRate = parseInt(document.getElementById('heartRate').value);
+            const weight = parseFloat(document.getElementById('weight').value);
+
+            if (!date || !time || isNaN(systolic) || isNaN(diastolic) || isNaN(heartRate) || isNaN(weight)) {
+                alert('Please fill in all fields.');
+                return;
+            }
+
+            const entries = loadEntries();
+            entries.push({ id: Date.now(), date, time, systolic, diastolic, heartRate, weight });
+            saveEntries(entries);
+
+            document.getElementById('systolic').value = '';
+            document.getElementById('diastolic').value = '';
+            document.getElementById('heartRate').value = '';
+            document.getElementById('weight').value = '';
+            setDefaults();
+            renderTable();
+        });
+
+        document.getElementById('logBody').addEventListener('click', (e) => {
+            const btn = e.target.closest('.delete-btn');
+            if (!btn) return;
+            const id = Number(btn.dataset.id);
+            const entries = loadEntries().filter(e => e.id !== id);
+            saveEntries(entries);
+            renderTable();
+        });
+
+        document.getElementById('saveExcelBtn').addEventListener('click', async () => {
+            const entries = loadEntries();
+            if (!entries.length) { alert('No data to export.'); return; }
+            const wb = entriesToWorkbook(entries);
+
+            // Try File System Access API for persistent file handle
+            if (window.showSaveFilePicker) {
+                try {
+                    fileHandle = await window.showSaveFilePicker({
+                        suggestedName: `health-log-${new Date().toISOString().slice(0, 10)}.xlsx`,
+                        types: [{ description: 'Excel', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }]
+                    });
+                    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(new Uint8Array(wbout));
+                    await writable.close();
+                    showStatus('Saved & linked to ' + fileHandle.name + ' — future entries auto-save here');
+                } catch (err) {
+                    if (err.name !== 'AbortError') showStatus('Save failed: ' + err.message, true);
+                }
+            } else {
+                // Fallback: download
+                XLSX.writeFile(wb, `health-log-${new Date().toISOString().slice(0, 10)}.xlsx`);
+                showStatus('Downloaded Excel file (use Chrome/Edge for auto-save feature)');
+            }
+        });
+
+        document.getElementById('loadExcelBtn').addEventListener('click', () => {
+            document.getElementById('fileInput').click();
+        });
+
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+                const data = await file.arrayBuffer();
+                const wb = XLSX.read(data, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(ws);
+
+                const imported = rows.map(r => ({
+                    id: Date.now() + Math.random(),
+                    date: r['Date'] || '',
+                    time: r['Time'] || '',
+                    systolic: parseInt(r['Systolic (mmHg)']) || 0,
+                    diastolic: parseInt(r['Diastolic (mmHg)']) || 0,
+                    heartRate: parseInt(r['Heart Rate (bpm)']) || 0,
+                    weight: parseFloat(r['Weight (kg)']) || 0
+                })).filter(r => r.date && r.systolic);
+
+                if (!imported.length) { alert('No valid entries found in file.'); return; }
+
+                if (confirm(`Import ${imported.length} entries? This will replace current data.`)) {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(imported));
+                    renderTable();
+                    showStatus('Imported ' + imported.length + ' entries from ' + file.name);
+                }
+            } catch (err) {
+                alert('Error reading file: ' + err.message);
+            }
+            e.target.value = '';
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            if (confirm('Delete all entries? This cannot be undone.')) {
+                localStorage.removeItem(STORAGE_KEY);
+                renderTable();
+            }
+        });
+
+        setDefaults();
+        renderTable();
+
+        // Register service worker for PWA / offline support
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js').catch(() => {});
+        }
+
+        // iOS install prompt
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+        if (isIOS && !isStandalone) {
+            const banner = document.createElement('div');
+            banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1a1a3a;color:#aab;text-align:center;padding:14px 16px;padding-bottom:max(14px,env(safe-area-inset-bottom));font-size:13px;z-index:10000;border-top:1px solid rgba(0,229,255,0.2)';
+            banner.innerHTML = 'Install this app: tap <b style="color:#00e5ff">Share</b> ⬆ then <b style="color:#00e5ff">Add to Home Screen</b> <span id="dismissInstall" style="margin-left:12px;cursor:pointer;color:#ff4444">✕</span>';
+            document.body.appendChild(banner);
+            document.getElementById('dismissInstall').onclick = () => banner.remove();
+        }
+    </script>
+</body>
+</html>
