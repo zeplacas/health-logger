@@ -2,7 +2,7 @@
   "name": "Health Data Logger",
   "short_name": "Health Log",
   "description": "Log blood pressure, heart rate, and weight over time",
-  "start_url": "./health-logger.html",
+  "start_url": "./health-onedrive.html",
   "display": "standalone",
   "background_color": "#0f0f23",
   "theme_color": "#0f0f23",
