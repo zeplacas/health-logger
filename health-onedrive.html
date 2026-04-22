@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Health Logger — OneDrive</title>
+    <!-- PWA & iOS meta tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Health OD">
+    <meta name="theme-color" content="#0f0f23">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html { height: -webkit-fill-available; }
+        body {
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
+            background: #0f0f23;
+            font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 30px 16px;
+            padding-top: max(30px, env(safe-area-inset-top));
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+            padding-left: max(16px, env(safe-area-inset-left));
+            padding-right: max(16px, env(safe-area-inset-right));
+            -webkit-font-smoothing: antialiased;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: none;
+        }
+        h1 { color: #00e5ff; margin-bottom: 24px; font-size: 28px; letter-spacing: 1px; }
+        .form-card {
+            background: rgba(20, 20, 50, 0.9);
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            border-radius: 12px;
+            padding: 24px;
+            width: 100%; max-width: 520px;
+            backdrop-filter: blur(8px);
+            margin-bottom: 30px;
+        }
+        .form-row { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+        .form-group { display: flex; flex-direction: column; flex: 1; min-width: 120px; }
+        label {
+            font-size: 12px; color: #8899aa; margin-bottom: 4px;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(0, 229, 255, 0.15);
+            border-radius: 6px;
+            padding: 10px 12px;
+            color: #e0e0e0;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.2s;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        input:focus { border-color: #00e5ff; }
+        input[type="number"] { -moz-appearance: textfield; }
+        input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+        .bp-group { display: flex; align-items: center; gap: 6px; }
+        .bp-group input { width: 70px; text-align: center; }
+        .bp-slash { color: #00e5ff; font-size: 20px; font-weight: bold; }
+        button {
+            width: 100%; padding: 12px; border: none; border-radius: 8px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            touch-action: manipulation;
+        }
+        button:active { transform: scale(0.98); }
+        #addBtn { background: #00e5ff; color: #0f0f23; margin-top: 6px; }
+        #addBtn:hover { background: #33ecff; }
+        #addBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .status-bar {
+            width: 100%; max-width: 520px;
+            text-align: center; font-size: 12px;
+            color: #4a7; margin-bottom: 10px;
+            min-height: 18px;
+        }
+        .status-bar.error { color: #f66; }
+        .status-bar.syncing { color: #ff9f43; }
+        /* Online/Offline indicator */
+        .connection-badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            font-size: 11px; padding: 3px 10px; border-radius: 12px;
+            margin-bottom: 10px;
+        }
+        .connection-badge.online { background: rgba(46,213,115,0.15); color: #2ed573; }
+        .connection-badge.offline { background: rgba(255,68,68,0.15); color: #ff4444; }
+        .connection-badge::before {
+            content: ''; width: 6px; height: 6px; border-radius: 50%;
+            background: currentColor;
+        }
+        .table-wrapper { width: 100%; max-width: 780px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        thead th {
+            background: rgba(0, 229, 255, 0.1);
+            color: #00e5ff;
+            padding: 10px 14px; text-align: left;
+            font-weight: 600; text-transform: uppercase;
+            font-size: 11px; letter-spacing: 0.8px;
+            border-bottom: 1px solid rgba(0, 229, 255, 0.2);
+            white-space: nowrap;
+        }
+        tbody td {
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            white-space: nowrap;
+        }
+        tbody tr:hover { background: rgba(0, 229, 255, 0.04); }
+        .delete-btn {
+            background: none; border: none; color: #ff4444;
+            cursor: pointer; font-size: 16px; padding: 2px 8px;
+            border-radius: 4px; width: auto;
+        }
+        .delete-btn:hover { background: rgba(255, 68, 68, 0.15); }
+        .empty-msg { text-align: center; color: #556; padding: 40px; font-size: 15px; }
+        .stat-bar {
+            display: flex; gap: 16px; width: 100%; max-width: 780px;
+            margin-bottom: 20px; flex-wrap: wrap;
+        }
+        .stat {
+            background: rgba(20, 20, 50, 0.8);
+            border: 1px solid rgba(0, 229, 255, 0.12);
+            border-radius: 8px; padding: 12px 18px;
+            flex: 1; min-width: 140px; text-align: center;
+        }
+        .stat .label { font-size: 11px; color: #667; text-transform: uppercase; }
+        .stat .value { font-size: 20px; color: #00e5ff; font-weight: 700; margin-top: 4px; }
+        /* Login screen */
+        #loginScreen {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            min-height: 80vh; width: 100%;
+        }
+        #appScreen { display: none; width: 100%; flex-direction: column; align-items: center; }
+        .login-card {
+            background: rgba(20, 20, 50, 0.9);
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            border-radius: 14px;
+            padding: 32px 28px;
+            width: 100%; max-width: 380px;
+            backdrop-filter: blur(8px);
+            text-align: center;
+        }
+        .login-card h2 { color: #00e5ff; margin-bottom: 6px; font-size: 22px; }
+        .login-card p { color: #667; font-size: 13px; margin-bottom: 20px; }
+        #msLoginBtn {
+            background: #00e5ff; color: #0f0f23;
+            padding: 14px; font-size: 16px;
+            border-radius: 8px; font-weight: 600;
+        }
+        #msLoginBtn:hover { background: #33ecff; }
+        .login-error { color: #ff4444; font-size: 13px; min-height: 20px; margin-top: 8px; }
+        /* User bar */
+        .user-bar {
+            width: 100%; max-width: 780px;
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 12px; margin-bottom: 12px;
+        }
+        .user-bar .user-name { color: #8899aa; font-size: 13px; }
+        .user-bar .user-name b { color: #00e5ff; }
+        #logoutBtn {
+            width: auto; padding: 6px 14px;
+            font-size: 12px; border-radius: 5px;
+            background: rgba(255,68,68,0.12);
+            color: #ff6666;
+            border: 1px solid rgba(255,68,68,0.25);
+        }
+        #logoutBtn:hover { background: rgba(255,68,68,0.22); }
+        .actions {
+            display: flex; gap: 10px;
+            width: 100%; max-width: 520px;
+            margin-bottom: 16px;
+        }
+        .actions button {
+            flex: 1; padding: 10px; font-size: 13px; border-radius: 6px;
+            background: rgba(0, 229, 255, 0.15);
+            color: #00e5ff;
+            border: 1px solid rgba(0, 229, 255, 0.3);
+        }
+        .actions button:hover { background: rgba(0, 229, 255, 0.25); }
+        #clearBtn {
+            background: rgba(255, 68, 68, 0.15) !important;
+            color: #ff4444 !important;
+            border: 1px solid rgba(255, 68, 68, 0.3) !important;
+        }
+        #clearBtn:hover { background: rgba(255, 68, 68, 0.25) !important; }
+        /* Pending queue badge */
+        .pending-badge {
+            display: inline-block; background: #ff9f43; color: #0f0f23;
+            font-size: 11px; font-weight: 700; padding: 2px 8px;
+            border-radius: 10px; margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen">
+        <h1>&#9829; Health Logger</h1>
+        <div class="login-card">
+            <h2>OneDrive Sync</h2>
+            <p>Sign in with your Microsoft account to save health data to OneDrive</p>
+            <button id="msLoginBtn">&#x1F511; Sign in with Microsoft</button>
+            <div class="login-error" id="authError"></div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="appScreen">
+        <h1>&#9829; Health Logger</h1>
+        <div class="user-bar">
+            <span>
+                <span class="user-name">Signed in as <b id="currentUserDisplay"></b></span>
+                <span class="connection-badge online" id="connBadge">Online</span>
+            </span>
+            <button id="logoutBtn">Sign Out</button>
+        </div>
+
+        <div class="form-card">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" id="date">
+                </div>
+                <div class="form-group">
+                    <label>Time</label>
+                    <input type="time" id="time">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Blood Pressure (mmHg)</label>
+                    <div class="bp-group">
+                        <input type="number" id="systolic" placeholder="120" min="50" max="300">
+                        <span class="bp-slash">/</span>
+                        <input type="number" id="diastolic" placeholder="80" min="20" max="200">
+                    </div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Heart Rate (bpm)</label>
+                    <input type="number" id="heartRate" placeholder="72" min="20" max="300">
+                </div>
+                <div class="form-group">
+                    <label>Weight (kg)</label>
+                    <input type="number" id="weight" placeholder="70.0" min="1" max="500" step="0.1">
+                </div>
+            </div>
+            <button id="addBtn">+ Log Entry</button>
+        </div>
+
+        <div class="status-bar" id="statusBar"></div>
+        <div class="stat-bar" id="stats"></div>
+
+        <div class="actions">
+            <button id="syncBtn">&#128260; Sync Now</button>
+            <button id="clearBtn">&#10005; Clear All</button>
+        </div>
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Blood Pressure</th>
+                        <th>Heart Rate</th>
+                        <th>Weight</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="logBody"></tbody>
+            </table>
+            <div class="empty-msg" id="emptyMsg">No entries yet. Log your first reading above.</div>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        'use strict';
+
+        // ========================================================
+        // CONFIGURATION — Replace with your Azure AD App values
+        // ========================================================
+        const CLIENT_ID = 'YOUR_CLIENT_ID_HERE'; // Azure AD Application (client) ID
+        const ONEDRIVE_FILENAME = 'HealthData.xlsx';
+        const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
+        const SCOPES = ['Files.ReadWrite', 'User.Read'];
+        const LOCAL_STORAGE_KEY = 'healthOD_entries';
+        const QUEUE_STORAGE_KEY = 'healthOD_queue';
+
+        // ========================================================
+        // MSAL Configuration
+        // ========================================================
+        const msalConfig = {
+            auth: {
+                clientId: CLIENT_ID,
+                authority: 'https://login.microsoftonline.com/common',
+                redirectUri: window.location.origin + window.location.pathname
+            },
+            cache: {
+                cacheLocation: 'localStorage',
+                storeAuthStateInCookie: true
+            }
+        };
+
+        let msalInstance = null;
+        let currentAccount = null;
+        let entries = [];
+        let pendingQueue = [];
+        let isSyncing = false;
+
+        // ========================================================
+        // DOM references
+        // ========================================================
+        const $ = (id) => document.getElementById(id);
+        const loginScreen = $('loginScreen');
+        const appScreen = $('appScreen');
+        const statusBar = $('statusBar');
+        const connBadge = $('connBadge');
+
+        // ========================================================
+        // Initialization
+        // ========================================================
+        async function init() {
+            try {
+                msalInstance = new msal.PublicClientApplication(msalConfig);
+                await msalInstance.initialize();
+            } catch (err) {
+                $('authError').textContent = 'Failed to initialize auth: ' + err.message;
+                return;
+            }
+
+            // Handle redirect callback (for redirect-based flows)
+            try {
+                const resp = await msalInstance.handleRedirectPromise();
+                if (resp) {
+                    currentAccount = resp.account;
+                }
+            } catch (err) {
+                console.error('Redirect error:', err);
+            }
+
+            // Check for existing session
+            const accounts = msalInstance.getAllAccounts();
+            if (accounts.length > 0) {
+                currentAccount = accounts[0];
+                await showApp();
+            }
+
+            // Load offline queue
+            pendingQueue = JSON.parse(localStorage.getItem(QUEUE_STORAGE_KEY) || '[]');
+
+            // Online/offline listeners
+            window.addEventListener('online', onOnline);
+            window.addEventListener('offline', onOffline);
+            updateConnectionBadge();
+
+            // Event listeners
+            $('msLoginBtn').addEventListener('click', login);
+            $('logoutBtn').addEventListener('click', logout);
+            $('addBtn').addEventListener('click', addEntry);
+            $('syncBtn').addEventListener('click', () => syncWithOneDrive());
+            $('clearBtn').addEventListener('click', clearAll);
+            $('logBody').addEventListener('click', handleDeleteClick);
+        }
+
+        // ========================================================
+        // Auth
+        // ========================================================
+        async function login() {
+            $('authError').textContent = '';
+            try {
+                const resp = await msalInstance.loginPopup({ scopes: SCOPES });
+                currentAccount = resp.account;
+                await showApp();
+            } catch (err) {
+                if (err.errorCode !== 'user_cancelled') {
+                    $('authError').textContent = err.message || 'Login failed';
+                }
+            }
+        }
+
+        function logout() {
+            msalInstance.logoutPopup({ account: currentAccount }).catch(() => {});
+            currentAccount = null;
+            entries = [];
+            pendingQueue = [];
+            loginScreen.style.display = 'flex';
+            appScreen.style.display = 'none';
+        }
+
+        async function getAccessToken() {
+            const request = { scopes: SCOPES, account: currentAccount };
+            try {
+                const resp = await msalInstance.acquireTokenSilent(request);
+                return resp.accessToken;
+            } catch {
+                // Silent token failed — try interactive
+                const resp = await msalInstance.acquireTokenPopup(request);
+                currentAccount = resp.account;
+                return resp.accessToken;
+            }
+        }
+
+        // ========================================================
+        // App display
+        // ========================================================
+        async function showApp() {
+            loginScreen.style.display = 'none';
+            appScreen.style.display = 'flex';
+            $('currentUserDisplay').textContent = currentAccount.name || currentAccount.username;
+            setDefaults();
+            await syncWithOneDrive();
+        }
+
+        function setDefaults() {
+            const now = new Date();
+            $('date').value = now.toISOString().slice(0, 10);
+            $('time').value = now.toTimeString().slice(0, 5);
+        }
+
+        // ========================================================
+        // Online / Offline
+        // ========================================================
+        function updateConnectionBadge() {
+            const online = navigator.onLine;
+            connBadge.textContent = online ? 'Online' : 'Offline';
+            connBadge.className = 'connection-badge ' + (online ? 'online' : 'offline');
+        }
+
+        function onOnline() {
+            updateConnectionBadge();
+            if (pendingQueue.length > 0) {
+                showStatus('Back online — syncing queued entries...', 'syncing');
+                syncWithOneDrive();
+            }
+        }
+
+        function onOffline() {
+            updateConnectionBadge();
+        }
+
+        // ========================================================
+        // Graph API helpers
+        // ========================================================
+        async function graphFetch(path, options = {}) {
+            const token = await getAccessToken();
+            const resp = await fetch(GRAPH_BASE + path, {
+                ...options,
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    ...options.headers
+                }
+            });
+            return resp;
+        }
+
+        async function downloadExcel() {
+            const resp = await graphFetch('/me/drive/root:/' + encodeURIComponent(ONEDRIVE_FILENAME) + ':/content');
+            if (resp.status === 404) return null;
+            if (!resp.ok) throw new Error('Failed to download: ' + resp.statusText);
+            return await resp.arrayBuffer();
+        }
+
+        async function uploadExcel(arrayBuffer) {
+            const resp = await graphFetch('/me/drive/root:/' + encodeURIComponent(ONEDRIVE_FILENAME) + ':/content', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+                body: arrayBuffer
+            });
+            if (!resp.ok) throw new Error('Failed to upload: ' + resp.statusText);
+            return resp;
+        }
+
+        // ========================================================
+        // Excel read/write with SheetJS
+        // ========================================================
+        function parseExcelToEntries(buffer) {
+            const wb = XLSX.read(buffer, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            if (!ws) return [];
+            const rows = XLSX.utils.sheet_to_json(ws);
+            return rows.map(r => ({
+                date: String(r['Date'] || ''),
+                time: String(r['Time'] || ''),
+                systolic: parseInt(r['Systolic']) || 0,
+                diastolic: parseInt(r['Diastolic']) || 0,
+                heartRate: parseInt(r['Heart Rate']) || 0,
+                weight: parseFloat(r['Weight']) || 0
+            })).filter(r => r.date && r.systolic);
+        }
+
+        function entriesToExcelBuffer(data) {
+            const sorted = [...data].sort((a, b) =>
+                new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time)
+            );
+            const rows = sorted.map(e => ({
+                'Date': e.date,
+                'Time': e.time,
+                'Systolic': e.systolic,
+                'Diastolic': e.diastolic,
+                'Heart Rate': e.heartRate,
+                'Weight': e.weight
+            }));
+            const ws = XLSX.utils.json_to_sheet(rows);
+            ws['!cols'] = [
+                { wch: 12 }, { wch: 8 }, { wch: 10 },
+                { wch: 10 }, { wch: 12 }, { wch: 8 }
+            ];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Health Data');
+            return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        }
+
+        // ========================================================
+        // Sync with OneDrive
+        // ========================================================
+        async function syncWithOneDrive() {
+            if (isSyncing) return;
+            if (!navigator.onLine) {
+                // Load from local cache
+                entries = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]');
+                renderTable();
+                showStatus('Offline — showing cached data', 'error');
+                return;
+            }
+
+            isSyncing = true;
+            showStatus('Syncing with OneDrive...', 'syncing');
+            $('addBtn').disabled = true;
+
+            try {
+                // Download existing file
+                const buffer = await downloadExcel();
+                let remoteEntries = [];
+
+                if (buffer) {
+                    remoteEntries = parseExcelToEntries(buffer);
+                }
+
+                // Merge pending queue into remote entries
+                if (pendingQueue.length > 0) {
+                    remoteEntries = mergeEntries(remoteEntries, pendingQueue);
+                    pendingQueue = [];
+                    localStorage.removeItem(QUEUE_STORAGE_KEY);
+                }
+
+                entries = remoteEntries;
+
+                // Upload merged file (always — ensures clean state)
+                if (entries.length > 0 || buffer !== null) {
+                    const xlsxBuffer = entriesToExcelBuffer(entries);
+                    await uploadExcel(xlsxBuffer);
+                }
+
+                // Cache locally
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(entries));
+                renderTable();
+                showStatus('Synced with OneDrive — ' + entries.length + ' entries');
+            } catch (err) {
+                console.error('Sync error:', err);
+                // Fall back to local cache
+                entries = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]');
+                renderTable();
+                showStatus('Sync failed: ' + err.message, 'error');
+            } finally {
+                isSyncing = false;
+                $('addBtn').disabled = false;
+            }
+        }
+
+        function mergeEntries(existing, newEntries) {
+            // Deduplicate by date+time+systolic+diastolic (simple fingerprint)
+            const key = (e) => e.date + '|' + e.time + '|' + e.systolic + '|' + e.diastolic + '|' + e.heartRate + '|' + e.weight;
+            const seen = new Set(existing.map(key));
+            const merged = [...existing];
+            for (const entry of newEntries) {
+                const k = key(entry);
+                if (!seen.has(k)) {
+                    merged.push(entry);
+                    seen.add(k);
+                }
+            }
+            return merged;
+        }
+
+        // ========================================================
+        // Add Entry
+        // ========================================================
+        async function addEntry() {
+            const date = $('date').value;
+            const time = $('time').value;
+            const systolic = parseInt($('systolic').value);
+            const diastolic = parseInt($('diastolic').value);
+            const heartRate = parseInt($('heartRate').value);
+            const weight = parseFloat($('weight').value);
+
+            if (!date || !time || isNaN(systolic) || isNaN(diastolic) || isNaN(heartRate) || isNaN(weight)) {
+                showStatus('Please fill in all fields.', 'error');
+                return;
+            }
+
+            const entry = { date, time, systolic, diastolic, heartRate, weight };
+
+            // Add to in-memory entries
+            entries.push(entry);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(entries));
+            renderTable();
+
+            // Clear form inputs (keep date/time defaults)
+            $('systolic').value = '';
+            $('diastolic').value = '';
+            $('heartRate').value = '';
+            $('weight').value = '';
+            setDefaults();
+
+            if (navigator.onLine) {
+                // Upload immediately
+                try {
+                    showStatus('Saving to OneDrive...', 'syncing');
+                    const xlsxBuffer = entriesToExcelBuffer(entries);
+                    await uploadExcel(xlsxBuffer);
+                    showStatus('Saved to OneDrive');
+                } catch (err) {
+                    // Queue for later
+                    pendingQueue.push(entry);
+                    localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(pendingQueue));
+                    showStatus('Upload failed — entry queued for sync', 'error');
+                }
+            } else {
+                // Queue for later
+                pendingQueue.push(entry);
+                localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(pendingQueue));
+                showStatus('Offline — entry saved locally, will sync when online', 'error');
+            }
+        }
+
+        // ========================================================
+        // Delete Entry
+        // ========================================================
+        async function handleDeleteClick(e) {
+            const btn = e.target.closest('.delete-btn');
+            if (!btn) return;
+            const idx = parseInt(btn.dataset.idx);
+            if (isNaN(idx)) return;
+
+            entries.splice(idx, 1);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(entries));
+            renderTable();
+
+            if (navigator.onLine) {
+                try {
+                    showStatus('Updating OneDrive...', 'syncing');
+                    const xlsxBuffer = entriesToExcelBuffer(entries);
+                    await uploadExcel(xlsxBuffer);
+                    showStatus('Entry deleted and synced');
+                } catch (err) {
+                    showStatus('Delete saved locally — sync failed: ' + err.message, 'error');
+                }
+            } else {
+                showStatus('Deleted locally — will sync when online', 'error');
+            }
+        }
+
+        // ========================================================
+        // Clear All
+        // ========================================================
+        async function clearAll() {
+            if (!entries.length) return;
+            if (!confirm('Delete all entries? This will also clear the OneDrive file.')) return;
+
+            entries = [];
+            pendingQueue = [];
+            localStorage.setItem(LOCAL_STORAGE_KEY, '[]');
+            localStorage.removeItem(QUEUE_STORAGE_KEY);
+            renderTable();
+
+            if (navigator.onLine) {
+                try {
+                    showStatus('Clearing OneDrive file...', 'syncing');
+                    // Upload empty workbook with headers only
+                    const xlsxBuffer = entriesToExcelBuffer([]);
+                    await uploadExcel(xlsxBuffer);
+                    showStatus('All entries cleared');
+                } catch (err) {
+                    showStatus('Local data cleared — OneDrive sync failed: ' + err.message, 'error');
+                }
+            } else {
+                showStatus('Cleared locally — will sync when online', 'error');
+            }
+        }
+
+        // ========================================================
+        // Rendering
+        // ========================================================
+        function renderTable() {
+            const tbody = $('logBody');
+            const emptyMsg = $('emptyMsg');
+
+            tbody.innerHTML = '';
+            emptyMsg.style.display = entries.length ? 'none' : 'block';
+
+            const sorted = [...entries]
+                .map((e, i) => ({ ...e, _idx: i }))
+                .sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time));
+
+            sorted.forEach(entry => {
+                const tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td>' + formatDate(entry.date) + '</td>' +
+                    '<td>' + escapeHtml(entry.time) + '</td>' +
+                    '<td>' + entry.systolic + '/' + entry.diastolic + '</td>' +
+                    '<td>' + entry.heartRate + ' bpm</td>' +
+                    '<td>' + entry.weight + ' kg</td>' +
+                    '<td><button class="delete-btn" data-idx="' + entry._idx + '" title="Delete">&#10005;</button></td>';
+                tbody.appendChild(tr);
+            });
+
+            renderStats();
+            updatePendingBadge();
+        }
+
+        function renderStats() {
+            const statsEl = $('stats');
+            if (!entries.length) { statsEl.innerHTML = ''; return; }
+
+            const avg = (arr) => (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1);
+            const sorted = [...entries].sort((a, b) =>
+                new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time)
+            );
+            const latest = sorted[0];
+
+            statsEl.innerHTML =
+                '<div class="stat"><div class="label">Latest BP</div><div class="value">' + latest.systolic + '/' + latest.diastolic + '</div></div>' +
+                '<div class="stat"><div class="label">Avg Heart Rate</div><div class="value">' + avg(entries.map(e => e.heartRate)) + ' bpm</div></div>' +
+                '<div class="stat"><div class="label">Avg Weight</div><div class="value">' + avg(entries.map(e => e.weight)) + ' kg</div></div>' +
+                '<div class="stat"><div class="label">Total Entries</div><div class="value">' + entries.length + '</div></div>';
+        }
+
+        function updatePendingBadge() {
+            const existing = document.querySelector('.pending-badge');
+            if (existing) existing.remove();
+            if (pendingQueue.length > 0) {
+                const badge = document.createElement('span');
+                badge.className = 'pending-badge';
+                badge.textContent = pendingQueue.length + ' pending';
+                $('syncBtn').appendChild(badge);
+            }
+        }
+
+        // ========================================================
+        // Utilities
+        // ========================================================
+        function formatDate(dateStr) {
+            const d = new Date(dateStr + 'T00:00:00');
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function showStatus(msg, type) {
+            statusBar.textContent = msg;
+            statusBar.className = 'status-bar' + (type ? ' ' + type : '');
+        }
+
+        // ========================================================
+        // PWA / iOS support
+        // ========================================================
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js').catch(() => {});
+        }
+
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+        if (isIOS && !isStandalone) {
+            const banner = document.createElement('div');
+            banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1a1a3a;color:#aab;text-align:center;padding:14px 16px;padding-bottom:max(14px,env(safe-area-inset-bottom));font-size:13px;z-index:10000;border-top:1px solid rgba(0,229,255,0.2)';
+            banner.innerHTML = 'Install this app: tap <b style="color:#00e5ff">Share</b> &#11014; then <b style="color:#00e5ff">Add to Home Screen</b> <span id="dismissInstall" style="margin-left:12px;cursor:pointer;color:#ff4444">&#10005;</span>';
+            document.body.appendChild(banner);
+            document.getElementById('dismissInstall').onclick = () => banner.remove();
+        }
+
+        // ========================================================
+        // Start
+        // ========================================================
+        init();
+    })();
+    </script>
+</body>
+</html>
