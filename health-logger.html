@@ -409,7 +409,9 @@ start<!DOCTYPE html>
             if (authToken) opts.headers['Authorization'] = `Bearer ${currentUser} ${authToken}`;
             if (body) opts.body = JSON.stringify(body);
             const resp = await fetch(API_BASE + endpoint, opts);
-            const data = await resp.json();
+            const text = await resp.text();
+            let data;
+            try { data = JSON.parse(text); } catch { throw new Error('Server error (non-JSON response)'); }
             if (!resp.ok) throw new Error(data.error || 'Request failed');
             return data;
         }
