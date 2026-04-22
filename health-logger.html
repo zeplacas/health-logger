@@ -392,29 +392,29 @@ start<!DOCTYPE html>
     </div><!-- end appScreen -->
 
     <script>
-        // --- Auth System ---
-        const USERS_KEY = 'healthLog_users';
+        // --- Config ---
+        const API_BASE = '/api';
         let currentUser = null;
+        let authToken = null;
         let isRegisterMode = false;
+        let fileHandle = null;
+        let cachedEntries = [];
 
-        function getStorageKey() {
-            return 'healthLog_' + currentUser + '_entries';
+        // --- API helpers ---
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const opts = {
+                method,
+                headers: { 'Content-Type': 'application/json' }
+            };
+            if (authToken) opts.headers['Authorization'] = `Bearer ${currentUser} ${authToken}`;
+            if (body) opts.body = JSON.stringify(body);
+            const resp = await fetch(API_BASE + endpoint, opts);
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || 'Request failed');
+            return data;
         }
 
-        async function hashPassword(password, salt) {
-            const data = new TextEncoder().encode(salt + password);
-            const hash = await crypto.subtle.digest('SHA-256', data);
-            return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-        }
-
-        function getUsers() {
-            try { return JSON.parse(localStorage.getItem(USERS_KEY)) || {}; } catch { return {}; }
-        }
-
-        function saveUsers(users) {
-            localStorage.setItem(USERS_KEY, JSON.stringify(users));
-        }
-
+        // --- Auth ---
         function toggleAuthMode() {
             isRegisterMode = !isRegisterMode;
             document.getElementById('authTitle').textContent = isRegisterMode ? 'Create Account' : 'Sign In';
@@ -434,33 +434,28 @@ start<!DOCTYPE html>
             if (username.length < 3) { errorEl.textContent = 'Username must be at least 3 characters.'; return; }
             if (password.length < 4) { errorEl.textContent = 'Password must be at least 4 characters.'; return; }
 
-            const users = getUsers();
-
-            if (isRegisterMode) {
-                if (users[username]) { errorEl.textContent = 'Username already taken.'; return; }
-                const salt = crypto.getRandomValues(new Uint8Array(16)).join('');
-                const hash = await hashPassword(password, salt);
-                users[username] = { salt, hash };
-                saveUsers(users);
-                currentUser = username;
+            try {
+                const endpoint = isRegisterMode ? '/register' : '/login';
+                const data = await apiCall(endpoint, 'POST', { username, password });
+                currentUser = data.username;
+                authToken = data.token || null;
+                if (authToken) localStorage.setItem('healthLog_session', JSON.stringify({ username: currentUser, token: authToken }));
                 showApp();
-            } else {
-                if (!users[username]) { errorEl.textContent = 'User not found.'; return; }
-                const hash = await hashPassword(password, users[username].salt);
-                if (hash !== users[username].hash) { errorEl.textContent = 'Incorrect password.'; return; }
-                currentUser = username;
-                showApp();
+            } catch (err) {
+                errorEl.textContent = err.message;
             }
         });
 
-        // Allow Enter key to submit
         document.getElementById('authPass').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') document.getElementById('authBtn').click();
         });
 
         document.getElementById('logoutBtn').addEventListener('click', () => {
             currentUser = null;
+            authToken = null;
             fileHandle = null;
+            cachedEntries = [];
+            localStorage.removeItem('healthLog_session');
             document.getElementById('loginScreen').style.display = 'flex';
             document.getElementById('appScreen').style.display = 'none';
             document.getElementById('authUser').value = '';
@@ -474,21 +469,20 @@ start<!DOCTYPE html>
             document.getElementById('currentUserDisplay').textContent = currentUser;
             fileHandle = null;
             setDefaults();
-            renderTable();
+            loadAndRender();
         }
 
-        // --- Data (per-user scoped) ---
-        let fileHandle = null;
-
-        function loadEntries() {
+        // --- Data ---
+        async function loadAndRender() {
             try {
-                return JSON.parse(localStorage.getItem(getStorageKey())) || [];
-            } catch { return []; }
-        }
-
-        function saveEntries(entries) {
-            localStorage.setItem(getStorageKey(), JSON.stringify(entries));
-            autoSaveToExcel(entries);
+                cachedEntries = await apiCall('/entries');
+                showStatus('Synced with cloud');
+            } catch {
+                showStatus('Offline — using cached data', true);
+                cachedEntries = JSON.parse(localStorage.getItem('healthLog_cache_' + currentUser) || '[]');
+            }
+            localStorage.setItem('healthLog_cache_' + currentUser, JSON.stringify(cachedEntries));
+            renderTable(cachedEntries);
         }
 
         function entriesToWorkbook(entries) {
@@ -534,17 +528,16 @@ start<!DOCTYPE html>
             document.getElementById('time').value = now.toTimeString().slice(0, 5);
         }
 
-        function renderTable() {
-            const entries = loadEntries();
+        function renderTable(entries) {
             const tbody = document.getElementById('logBody');
             const emptyMsg = document.getElementById('emptyMsg');
 
             tbody.innerHTML = '';
             emptyMsg.style.display = entries.length ? 'none' : 'block';
 
-            entries.sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time));
+            const sorted = [...entries].sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time));
 
-            entries.forEach((entry, i) => {
+            sorted.forEach(entry => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>${formatDate(entry.date)}</td>
@@ -584,7 +577,6 @@ start<!DOCTYPE html>
                 }
             });
 
-            // Blood Pressure
             if (bpChart) bpChart.destroy();
             bpChart = new Chart(document.getElementById('bpChart'), {
                 type: 'line',
@@ -598,7 +590,6 @@ start<!DOCTYPE html>
                 options: chartOpts('mmHg')
             });
 
-            // Heart Rate
             if (hrChart) hrChart.destroy();
             hrChart = new Chart(document.getElementById('hrChart'), {
                 type: 'line',
@@ -609,7 +600,6 @@ start<!DOCTYPE html>
                 options: chartOpts('bpm')
             });
 
-            // Weight
             if (wtChart) wtChart.destroy();
             wtChart = new Chart(document.getElementById('wtChart'), {
                 type: 'line',
@@ -631,7 +621,8 @@ start<!DOCTYPE html>
             if (!entries.length) { statsEl.innerHTML = ''; return; }
 
             const avg = (arr) => (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1);
-            const latest = entries.sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time))[0];
+            const sorted = [...entries].sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time));
+            const latest = sorted[0];
 
             statsEl.innerHTML = `
                 <div class="stat">
@@ -653,7 +644,8 @@ start<!DOCTYPE html>
             `;
         }
 
-        document.getElementById('addBtn').addEventListener('click', () => {
+        // --- Event handlers ---
+        document.getElementById('addBtn').addEventListener('click', async () => {
             const date = document.getElementById('date').value;
             const time = document.getElementById('time').value;
             const systolic = parseInt(document.getElementById('systolic').value);
@@ -666,33 +658,37 @@ start<!DOCTYPE html>
                 return;
             }
 
-            const entries = loadEntries();
-            entries.push({ id: Date.now(), date, time, systolic, diastolic, heartRate, weight });
-            saveEntries(entries);
-
-            document.getElementById('systolic').value = '';
-            document.getElementById('diastolic').value = '';
-            document.getElementById('heartRate').value = '';
-            document.getElementById('weight').value = '';
-            setDefaults();
-            renderTable();
+            try {
+                await apiCall('/entries', 'POST', { date, time, systolic, diastolic, heartRate, weight });
+                document.getElementById('systolic').value = '';
+                document.getElementById('diastolic').value = '';
+                document.getElementById('heartRate').value = '';
+                document.getElementById('weight').value = '';
+                setDefaults();
+                await loadAndRender();
+                autoSaveToExcel(cachedEntries);
+            } catch (err) {
+                alert('Failed to save: ' + err.message);
+            }
         });
 
-        document.getElementById('logBody').addEventListener('click', (e) => {
+        document.getElementById('logBody').addEventListener('click', async (e) => {
             const btn = e.target.closest('.delete-btn');
             if (!btn) return;
-            const id = Number(btn.dataset.id);
-            const entries = loadEntries().filter(e => e.id !== id);
-            saveEntries(entries);
-            renderTable();
+            const id = btn.dataset.id;
+            try {
+                await apiCall('/entries/' + id, 'DELETE');
+                await loadAndRender();
+                autoSaveToExcel(cachedEntries);
+            } catch (err) {
+                alert('Failed to delete: ' + err.message);
+            }
         });
 
         document.getElementById('saveExcelBtn').addEventListener('click', async () => {
-            const entries = loadEntries();
-            if (!entries.length) { alert('No data to export.'); return; }
-            const wb = entriesToWorkbook(entries);
+            if (!cachedEntries.length) { alert('No data to export.'); return; }
+            const wb = entriesToWorkbook(cachedEntries);
 
-            // Try File System Access API for persistent file handle
             if (window.showSaveFilePicker) {
                 try {
                     fileHandle = await window.showSaveFilePicker({
@@ -708,9 +704,8 @@ start<!DOCTYPE html>
                     if (err.name !== 'AbortError') showStatus('Save failed: ' + err.message, true);
                 }
             } else {
-                // Fallback: download
                 XLSX.writeFile(wb, `health-log-${new Date().toISOString().slice(0, 10)}.xlsx`);
-                showStatus('Downloaded Excel file (use Chrome/Edge for auto-save feature)');
+                showStatus('Downloaded Excel file');
             }
         });
 
@@ -728,7 +723,6 @@ start<!DOCTYPE html>
                 const rows = XLSX.utils.sheet_to_json(ws);
 
                 const imported = rows.map(r => ({
-                    id: Date.now() + Math.random(),
                     date: r['Date'] || '',
                     time: r['Time'] || '',
                     systolic: parseInt(r['Systolic (mmHg)']) || 0,
@@ -739,23 +733,43 @@ start<!DOCTYPE html>
 
                 if (!imported.length) { alert('No valid entries found in file.'); return; }
 
-                if (confirm(`Import ${imported.length} entries? This will replace current data.`)) {
-                    localStorage.setItem(getStorageKey(), JSON.stringify(imported));
-                    renderTable();
+                if (confirm(`Import ${imported.length} entries? They will be added to your existing data.`)) {
+                    for (const entry of imported) {
+                        await apiCall('/entries', 'POST', entry);
+                    }
+                    await loadAndRender();
                     showStatus('Imported ' + imported.length + ' entries from ' + file.name);
                 }
             } catch (err) {
-                alert('Error reading file: ' + err.message);
+                alert('Error: ' + err.message);
             }
             e.target.value = '';
         });
 
-        document.getElementById('clearBtn').addEventListener('click', () => {
-            if (confirm('Delete all entries? This cannot be undone.')) {
-                localStorage.removeItem(getStorageKey());
-                renderTable();
+        document.getElementById('clearBtn').addEventListener('click', async () => {
+            if (!confirm('Delete all entries? This cannot be undone.')) return;
+            try {
+                for (const entry of cachedEntries) {
+                    await apiCall('/entries/' + entry.id, 'DELETE');
+                }
+                await loadAndRender();
+            } catch (err) {
+                alert('Error clearing: ' + err.message);
             }
         });
+
+        // --- Auto-login from saved session ---
+        (function checkSession() {
+            try {
+                const session = JSON.parse(localStorage.getItem('healthLog_session'));
+                if (session && session.username && session.token) {
+                    currentUser = session.username;
+                    authToken = session.token;
+                    showApp();
+                    return;
+                }
+            } catch {}
+        })();
 
         // Register service worker for PWA / offline support
         if ('serviceWorker' in navigator) {

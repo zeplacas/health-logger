@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>Generating icons...</h2>
+<script>
+function makeIcon(size) {
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const ctx = c.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#0f0f23';
+    ctx.beginPath();
+    ctx.roundRect(0, 0, size, size, size * 0.2);
+    ctx.fill();
+
+    // Heart
+    const cx = size / 2, cy = size * 0.42, s = size * 0.28;
+    ctx.fillStyle = '#ff4466';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + s * 0.7);
+    ctx.bezierCurveTo(cx - s * 1.5, cy - s * 0.2, cx - s * 0.8, cy - s * 1.1, cx, cy - s * 0.4);
+    ctx.bezierCurveTo(cx + s * 0.8, cy - s * 1.1, cx + s * 1.5, cy - s * 0.2, cx, cy + s * 0.7);
+    ctx.fill();
+
+    // Pulse line
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = size * 0.025;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const y = size * 0.68, w = size * 0.06;
+    ctx.beginPath();
+    ctx.moveTo(size * 0.15, y);
+    ctx.lineTo(size * 0.35, y);
+    ctx.lineTo(size * 0.40, y - w * 2);
+    ctx.lineTo(size * 0.45, y + w * 2);
+    ctx.lineTo(size * 0.50, y - w * 3);
+    ctx.lineTo(size * 0.55, y + w * 1.5);
+    ctx.lineTo(size * 0.60, y);
+    ctx.lineTo(size * 0.85, y);
+    ctx.stroke();
+
+    return c.toDataURL('image/png');
+}
+
+[192, 512].forEach(size => {
+    const dataUrl = makeIcon(size);
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = 'icon-' + size + '.png';
+    a.textContent = 'Download icon-' + size + '.png';
+    a.style.display = 'block';
+    a.style.margin = '10px';
+    a.style.fontSize = '20px';
+    document.body.appendChild(a);
+
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.style.width = '96px';
+    img.style.margin = '10px';
+    document.body.appendChild(img);
+});
+document.querySelector('h2').textContent = 'Click links to download, or right-click images to save:';
+</script>
+</body>
+</html>

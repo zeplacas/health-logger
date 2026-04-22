@@ -1,0 +1,11 @@
+{
+  "navigationFallback": {
+    "rewrite": "/health-logger.html"
+  },
+  "routes": [
+    {
+      "route": "/api/*",
+      "allowedRoles": ["anonymous"]
+    }
+  ]
+}
